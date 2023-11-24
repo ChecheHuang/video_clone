@@ -48,46 +48,50 @@ export const appRouter = router({
     const { userId } = ctx
 
     const billingUrl = absoluteUrl('/dashboard/billing')
-
     if (!userId) throw new TRPCError({ code: 'UNAUTHORIZED' })
-
-    const dbUser = await db.user.findFirst({
-      where: {
-        id: userId,
-      },
-    })
-
-    if (!dbUser) throw new TRPCError({ code: 'UNAUTHORIZED' })
-
-    const subscriptionPlan = await getUserSubscriptionPlan()
-
-    if (subscriptionPlan.isSubscribed && dbUser.stripeCustomerId) {
-      const stripeSession = await stripe.billingPortal.sessions.create({
-        customer: dbUser.stripeCustomerId,
-        return_url: billingUrl,
+    try {
+      const dbUser = await db.user.findFirst({
+        where: {
+          id: userId,
+        },
       })
 
-      return { url: stripeSession.url }
-    }
+      if (!dbUser) throw new TRPCError({ code: 'UNAUTHORIZED' })
 
-    const stripeSession = await stripe.checkout.sessions.create({
-      success_url: billingUrl,
-      cancel_url: billingUrl,
-      payment_method_types: ['card', 'paypal'],
-      mode: 'subscription',
-      billing_address_collection: 'auto',
-      line_items: [
-        {
-          price: PLANS.find((plan) => plan.name === 'Pro')?.price.priceIds.test,
-          quantity: 1,
+      const subscriptionPlan = await getUserSubscriptionPlan()
+
+      if (subscriptionPlan.isSubscribed && dbUser.stripeCustomerId) {
+        const stripeSession = await stripe.billingPortal.sessions.create({
+          customer: dbUser.stripeCustomerId,
+          return_url: billingUrl,
+        })
+
+        return { url: stripeSession.url }
+      }
+
+      const stripeSession = await stripe.checkout.sessions.create({
+        success_url: billingUrl,
+        cancel_url: billingUrl,
+        payment_method_types: ['card', 'paypal'],
+        mode: 'subscription',
+        billing_address_collection: 'auto',
+        line_items: [
+          {
+            price: PLANS.find((plan) => plan.name === 'Pro')?.price.priceIds
+              .test,
+            quantity: 1,
+          },
+        ],
+        metadata: {
+          userId: userId,
         },
-      ],
-      metadata: {
-        userId: userId,
-      },
-    })
+      })
+      console.log('stripeSession', stripeSession)
 
-    return { url: stripeSession.url }
+      return { url: stripeSession.url }
+    } catch (error) {
+      console.log(error)
+    }
   }),
 
   getFileMessages: privateProcedure
